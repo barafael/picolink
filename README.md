@@ -81,7 +81,9 @@ Use the `IP` and `PORT` environment variables to choose where the server listens
 
 ### WebUSB app
 
-Requires [Trunk](https://trunkrs.dev).
+Hosted at <https://barafael.github.io/picolink/>, deployed from `main` by CI.
+
+To run it locally, install [Trunk](https://trunkrs.dev).
 
 ```sh
 cd webusb-app

@@ -79,3 +79,44 @@ jobs:
         with:
           name: picolink-firmware
           path: firmware/target/thumbv6m-none-eabi/release/picolink-firmware
+
+  # The WebUSB app on GitHub Pages, once everything else passed on main.
+  pages-build:
+    name: Pages build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: [fmt, host, wasm, firmware]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read
+    env:
+      TRUNK_VERSION: 0.22.1
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Trunk
+        run: curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/v$TRUNK_VERSION/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C ~/.cargo/bin
+      - id: pages
+        uses: actions/configure-pages@v6
+      # The site lives below the domain root, e.g. /picolink/.
+      - name: Build
+        run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
+        working-directory: webusb-app
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: webusb-app/dist
+
+  pages-deploy:
+    name: Pages deploy
+    needs: pages-build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
