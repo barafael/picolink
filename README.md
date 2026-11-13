@@ -36,8 +36,9 @@ the actuator is the onboard LED (GPIO 25), the sensor is the RP2040's internal t
   - It serves the same protocol with the real postcard-rpc server, over in-memory channels instead of USB.
   - Its test exercises every endpoint and the topic.
 - `app/`: a Dioxus fullstack app.
-  - `server` feature: `device.rs` connects to the device or the mock firmware and keeps a `DeviceState`.
-  - `api.rs`: the `/api/device` websocket. It streams `DeviceState` to UIs and accepts `Command`s.
+  - `server` feature: `device.rs` connects to the device or the mock firmware and publishes its `DeviceState`.
+    The `Device` actor takes `Command`s over a channel and stops once no sender is left. `main.rs` spawns it.
+  - `api.rs`: the `/api/device` websocket. It streams `DeviceState` to UIs and forwards their `Command`s to the device.
   - `web` / `desktop` features: `ui.rs`, the same UI for both.
 - `webusb-app/`: a Leptos page, the alternative to `app/` without a server.
   - `usb.rs`: finds the device through WebUSB and connects postcard-rpc's WebUSB client to it.
@@ -136,4 +137,5 @@ In VS Code, open the matching workspace file:
 
 ```sh
 cargo test -p picolink-mock-firmware
+cargo test -p picolink-app --no-default-features --features server   # the device actor against the mock firmware
 ```

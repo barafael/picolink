@@ -23,6 +23,9 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1", features = ["macros", "sync", "time"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+tokio = { version = "1", features = ["rt"] }
+
 [features]
 default = ["web"]
 web = ["dioxus/web"]

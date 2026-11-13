@@ -7,7 +7,10 @@ use dioxus::{
 use picolink_protocol::{ActuatorState, SensorReading};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
-use {crate::device::DeviceHandle, dioxus::fullstack::TypedWebsocket};
+use {
+    dioxus::{fullstack::TypedWebsocket, server::axum::Extension},
+    tokio::sync::{mpsc, watch},
+};
 
 /// What the server knows about the device. Pushed to every UI whenever it changes.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -30,15 +33,20 @@ pub enum Command {
 }
 
 /// Streams [`DeviceState`] to the UI and forwards its [`Command`]s to the device.
-#[get("/api/device")]
+///
+/// The server provides both channel ends to the device as router extensions.
+#[get("/api/device", state: Extension<watch::Receiver<DeviceState>>, commands: Extension<mpsc::Sender<Command>>)]
 pub async fn device_socket(options: WebSocketOptions) -> Result<Websocket<Command, DeviceState>> {
-    Ok(options.on_upgrade(|socket| bridge(socket, crate::device::handle())))
+    Ok(options.on_upgrade(|socket| bridge(socket, state.0, commands.0)))
 }
 
-/// Runs until the UI goes away.
+/// Runs until the UI or the device goes away.
 #[cfg(feature = "server")]
-async fn bridge(mut socket: TypedWebsocket<Command, DeviceState>, device: &'static DeviceHandle) {
-    let mut state = device.state();
+async fn bridge(
+    mut socket: TypedWebsocket<Command, DeviceState>,
+    mut state: watch::Receiver<DeviceState>,
+    commands: mpsc::Sender<Command>,
+) {
     state.mark_changed();
     loop {
         tokio::select! {
@@ -52,7 +60,11 @@ async fn bridge(mut socket: TypedWebsocket<Command, DeviceState>, device: &'stat
                 }
             }
             command = socket.recv() => match command {
-                Ok(command) => device.command(command),
+                Ok(command) => {
+                    if commands.send(command).await.is_err() {
+                        break;
+                    }
+                }
                 Err(_) => break,
             },
         }

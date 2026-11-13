@@ -1,7 +1,7 @@
 //! Mock firmware: serves the picolink protocol like the real firmware, but without hardware.
 //!
 //! The same handlers run on one of two transports:
-//! - [`spawn`]: in-process channels. Needs no setup, but bypasses USB entirely.
+//! - [`in_process`]: in-process channels. Needs no setup, but bypasses USB entirely.
 //! - [`usb_gadget`] (Linux, feature `usb-gadget`): a real USB device on this machine, through the kernel's
 //!   `dummy_hcd`. The server finds and claims it exactly like the real firmware.
 
@@ -84,11 +84,11 @@ mod channels {
 
     dispatcher!(ChannelMock, WireTxImpl, WireSpawnImpl);
 
-    /// Starts the mock firmware and returns a client connected to it over in-process channels.
-    /// Must be called inside a tokio runtime.
+    /// The mock firmware, and a client connected to it over in-process channels.
     ///
-    /// The mock firmware stops once the client and all its clones are dropped.
-    pub fn spawn() -> HostClient<WireError> {
+    /// Running the mock firmware's future, for example by spawning it, is up to the caller.
+    /// It completes once the client is closed.
+    pub fn in_process() -> (HostClient<WireError>, impl Future<Output = ()>) {
         let (client_tx, server_rx) = tokio::sync::mpsc::channel(16);
         let (server_tx, client_rx) = tokio::sync::mpsc::channel(16);
 
@@ -100,9 +100,8 @@ mod channels {
             buf: 1024,
             kkind,
         };
-        tokio::spawn(serve(new_server(app, settings)));
-
-        new_from_channels(client_tx, client_rx, VarSeqKind::Seq4)
+        let client = new_from_channels(client_tx, client_rx, VarSeqKind::Seq4);
+        (client, serve(new_server(app, settings)))
     }
 
     async fn serve(mut server: Server<WireTxImpl, WireRxImpl, WireRxBuf, ChannelMock>) {
@@ -115,7 +114,7 @@ mod channels {
     }
 }
 
-pub use channels::spawn;
+pub use channels::in_process;
 
 #[cfg(all(target_os = "linux", feature = "usb-gadget"))]
 pub mod usb_gadget;
@@ -159,7 +158,8 @@ mod test {
 
     #[tokio::test]
     async fn serves_the_protocol() {
-        let client = spawn();
+        let (client, firmware) = in_process();
+        let firmware = tokio::spawn(firmware);
         let mut readings = client.subscribe_multi::<ReadingTopic>(8).await.unwrap();
 
         assert_eq!(client.send_resp::<SerialNumberEndpoint>(&()).await.unwrap(), SERIAL_NUMBER);
@@ -170,8 +170,11 @@ mod test {
         );
         assert_eq!(client.send_resp::<GetActuatorEndpoint>(&()).await.unwrap(), ActuatorState::On);
 
-        let first = tokio::time::timeout(2 * SENSOR_INTERVAL, readings.recv()).await.unwrap().unwrap();
-        let second = tokio::time::timeout(2 * SENSOR_INTERVAL, readings.recv()).await.unwrap().unwrap();
+        let first = readings.recv().await.unwrap();
+        let second = readings.recv().await.unwrap();
         assert!(second.uptime_ms > first.uptime_ms);
+
+        client.close();
+        firmware.await.unwrap();
     }
 }

@@ -44,6 +44,8 @@ jobs:
         run: cargo clippy --locked -p picolink-app --no-default-features --features desktop --all-targets -- -D warnings
       - name: Test
         run: cargo test --locked -p picolink-protocol -p picolink-mock-firmware
+      - name: Test (server)
+        run: cargo test --locked -p picolink-app --no-default-features --features server
 
   wasm:
     name: Web
