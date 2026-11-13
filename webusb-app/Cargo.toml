@@ -1,0 +1,25 @@
+[package]
+name = "picolink-webusb-app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Browser UI that talks to the device directly through WebUSB, without a server"
+
+[dependencies]
+picolink-protocol = { path = "../protocol" }
+
+console_error_panic_hook = "0.1"
+js-sys = "0.3"
+leptos = { version = "0.8", features = ["csr"] }
+postcard-rpc = { workspace = true, features = ["webusb"] }
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = [
+    "Navigator",
+    "Usb",
+    "UsbConfiguration",
+    "UsbConnectionEvent",
+    "UsbDevice",
+    "UsbDeviceFilter",
+    "UsbDeviceRequestOptions",
+    "Window",
+] }

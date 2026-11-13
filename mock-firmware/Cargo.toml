@@ -1,0 +1,26 @@
+[package]
+name = "picolink-mock-firmware"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Mock of the picolink firmware, for running without hardware"
+
+[features]
+# Linux only: serve as a real USB device through the kernel's dummy_hcd. Needs root to run.
+usb-gadget = ["postcard-rpc/usb-gadget", "postcard-rpc/tokio", "dep:usb-gadget", "tokio/macros", "tokio/signal"]
+
+[[bin]]
+name = "picolink-mock-firmware"
+required-features = ["usb-gadget"]
+
+[dependencies]
+picolink-protocol = { path = "../protocol" }
+
+postcard-rpc = { workspace = true, features = ["test-utils"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+usb-gadget = { version = "1.3", optional = true, features = ["tokio"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

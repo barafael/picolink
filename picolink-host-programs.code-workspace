@@ -1,0 +1,18 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+	],
+	"settings": {
+		"rust-analyzer.showUnlinkedFileNotification": false,
+		"rust-analyzer.linkedProjects": [
+			"Cargo.toml",
+		],
+		// Only builds for wasm32, see picolink-webusb-app.code-workspace.
+		"rust-analyzer.check.extraArgs": [
+			"--exclude",
+			"picolink-webusb-app",
+		],
+	}
+}

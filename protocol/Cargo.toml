@@ -1,0 +1,15 @@
+[package]
+name = "picolink-protocol"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "postcard-rpc interface between the picolink firmware and its host"
+
+[features]
+defmt = ["dep:defmt"]
+
+[dependencies]
+defmt = { version = "1", optional = true }
+postcard-rpc = { workspace = true }
+postcard-schema = { version = "0.2", features = ["derive"] }
+serde = { version = "1", default-features = false, features = ["derive"] }

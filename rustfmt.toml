@@ -1,0 +1,4 @@
+# The import options need `cargo +nightly fmt`.
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+max_width = 140

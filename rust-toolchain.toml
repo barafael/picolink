@@ -1,0 +1,4 @@
+# Nightly 2026-10-31 hits a query cycle compiling postcard-schema.
+[toolchain]
+channel = "stable"
+targets = ["thumbv6m-none-eabi", "wasm32-unknown-unknown"]

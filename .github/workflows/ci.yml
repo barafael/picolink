@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+# Clippy's `-D warnings` goes after `--`, not into RUSTFLAGS: that would replace webusb-app/.cargo/config.toml's rustflags.
+jobs:
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # The import options in rustfmt.toml need nightly.
+      - run: rustup toolchain install nightly --profile minimal --component rustfmt
+      - run: cargo +nightly fmt --check
+      - run: cargo +nightly fmt --check
+        working-directory: firmware
+
+  host:
+    name: Host
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install the desktop UI's system libraries
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+      # Installs the toolchain from rust-toolchain.toml.
+      - run: rustup toolchain install && rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (protocol, mock firmware)
+        run: cargo clippy --locked -p picolink-protocol -p picolink-mock-firmware --all-targets --all-features -- -D warnings
+      - name: Clippy (server)
+        run: cargo clippy --locked -p picolink-app --no-default-features --features server --all-targets -- -D warnings
+      - name: Clippy (desktop UI)
+        run: cargo clippy --locked -p picolink-app --no-default-features --features desktop --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --locked -p picolink-protocol -p picolink-mock-firmware
+
+  wasm:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install && rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Clippy (web UI)
+        run: cargo clippy --locked -p picolink-app --target wasm32-unknown-unknown -- -D warnings
+      # From its directory, so that its .cargo/config.toml applies.
+      - name: Clippy (WebUSB app)
+        run: cargo clippy --locked --target wasm32-unknown-unknown -- -D warnings
+        working-directory: webusb-app
+
+  firmware:
+    name: Firmware
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firmware
+    steps:
+      - uses: actions/checkout@v7
+      - run: rustup toolchain install && rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: firmware
+      - name: Clippy
+        run: cargo clippy --locked -- -D warnings
+      - name: Build
+        run: cargo build --locked --release
+      - uses: actions/upload-artifact@v7
+        with:
+          name: picolink-firmware
+          path: firmware/target/thumbv6m-none-eabi/release/picolink-firmware

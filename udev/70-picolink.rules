@@ -1,0 +1,3 @@
+# picolink (16d0:12ce, shared with the MT21): let the logged-in user open the raw USB device.
+# Must sort before 73-seat-late.rules, which applies the uaccess tag.
+SUBSYSTEM=="usb", ATTRS{idVendor}=="16d0", ATTRS{idProduct}=="12ce", TAG+="uaccess"

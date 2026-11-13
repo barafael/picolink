@@ -1,0 +1,131 @@
+:root {
+    color-scheme: light dark;
+    --bg: #f4f5f7;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #6b7385;
+    --accent: #2f7cf6;
+    --ok: #1f9d55;
+    --error: #d64545;
+    --pending: #c58a12;
+    font-family: system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14171d;
+        --card: #1e232c;
+        --text: #e6e9ef;
+        --muted: #8b93a5;
+    }
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+}
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 1.5rem 1.5rem 0;
+}
+
+h1 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+main {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 1rem;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 1.5rem;
+}
+
+.card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+.card h2 {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.label,
+.hint {
+    color: var(--muted);
+}
+
+.label {
+    margin: 0 0 0.5rem;
+}
+
+.value {
+    margin: 0;
+    font-size: 2.5rem;
+    font-variant-numeric: tabular-nums;
+}
+
+dl {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 0.4rem 1rem;
+    margin: 0;
+}
+
+dt {
+    color: var(--muted);
+}
+
+dd {
+    margin: 0;
+    font-family: ui-monospace, monospace;
+    font-size: 0.9rem;
+    overflow-wrap: anywhere;
+}
+
+.pill {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    color: white;
+}
+
+.pill.ok { background: var(--ok); }
+.pill.pending { background: var(--pending); }
+.pill.error { background: var(--error); }
+
+.toggle {
+    min-width: 6rem;
+    padding: 0.6rem 1.2rem;
+    border: 2px solid var(--muted);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text);
+    font-size: 1rem;
+    cursor: pointer;
+}
+
+.toggle.on {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: white;
+}
+
+.toggle:disabled {
+    opacity: 0.5;
+    cursor: default;
+}

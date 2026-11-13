@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = ["protocol", "mock-firmware", "app", "webusb-app"]
+# The WebUSB app only builds for wasm32, see its README section.
+default-members = ["protocol", "mock-firmware", "app"]
+
+# The firmware is built for thumbv6m-none-eabi with its own config and lockfile.
+exclude = ["firmware"]
+
+[workspace.dependencies]
+# Unreleased: the latest release (0.12.1) only supports embassy-usb 0.5. Keep in sync with firmware/Cargo.toml.
+postcard-rpc = { git = "https://github.com/jamesmunns/postcard-rpc", rev = "2469ebc614108ac2ab68d923d50c8da4c9f3e91d", default-features = false }

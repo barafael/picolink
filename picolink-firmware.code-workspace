@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+	],
+	"settings": {
+		"rust-analyzer.cargo.target": "thumbv6m-none-eabi",
+		"rust-analyzer.check.allTargets": false,
+		"rust-analyzer.showUnlinkedFileNotification": false,
+		"rust-analyzer.linkedProjects": [
+			"firmware/Cargo.toml",
+		],
+	}
+}

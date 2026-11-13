@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+	],
+	"settings": {
+		"rust-analyzer.cargo.target": "wasm32-unknown-unknown",
+		// Same as webusb-app/.cargo/config.toml, which rust-analyzer doesn't see, as it runs cargo from the workspace root.
+		"rust-analyzer.cargo.extraEnv": {
+			"RUSTFLAGS": "--cfg=web_sys_unstable_apis",
+		},
+		"rust-analyzer.cargo.cfgs": [
+			"debug_assertions",
+			"miri",
+			"web_sys_unstable_apis",
+		],
+		// Only check the package of the edited file: the rest of the workspace is not meant for wasm32.
+		"rust-analyzer.check.workspace": false,
+		"rust-analyzer.showUnlinkedFileNotification": false,
+		"rust-analyzer.linkedProjects": [
+			"Cargo.toml",
+		],
+	}
+}

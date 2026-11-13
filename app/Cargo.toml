@@ -1,0 +1,36 @@
+[package]
+name = "picolink-app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Server owning the picolink device, with web and desktop UIs"
+
+[dependencies]
+picolink-protocol = { path = "../protocol" }
+
+dioxus = { version = "0.7.10", features = ["fullstack"] }
+serde = { version = "1", features = ["derive"] }
+
+# Server only.
+nusb = { version = "0.2", optional = true }
+picolink-mock-firmware = { path = "../mock-firmware", optional = true }
+postcard-rpc = { workspace = true, features = ["raw-nusb"], optional = true }
+thiserror = { version = "2", optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+gloo-timers = { version = "0.3", features = ["futures"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1", features = ["macros", "sync", "time"] }
+
+[features]
+default = ["web"]
+web = ["dioxus/web"]
+desktop = ["dioxus/desktop"]
+server = [
+    "dioxus/server",
+    "dep:nusb",
+    "dep:picolink-mock-firmware",
+    "dep:postcard-rpc",
+    "dep:thiserror",
+]
