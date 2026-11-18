@@ -3,15 +3,23 @@
 
 mod usb;
 
-use std::convert::Infallible;
+use std::{convert::Infallible, pin::pin};
 
+use futures_util::future::{Either, select};
+use gloo_timers::future::TimeoutFuture;
 use leptos::{prelude::*, task::spawn_local};
 use picolink_protocol::{ActuatorState, GetActuatorEndpoint, ReadingTopic, SensorReading, SerialNumberEndpoint, SetActuatorEndpoint};
-use postcard_rpc::host_client::MultiSubRxError;
+use postcard_rpc::{
+    Endpoint,
+    host_client::{HostErr, MultiSubRxError},
+    standard_icd::WireError,
+};
 
 use crate::usb::{Client, Picolink};
 
 const READING_DEPTH: usize = 16;
+/// Same as the server's.
+const REQUEST_TIMEOUT_MS: u32 = 1000;
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -98,8 +106,8 @@ impl State {
     /// Runs for as long as the device is connected.
     async fn session(self, client: &Client) -> Result<Infallible, String> {
         // Protocol version mismatches show up here: the device rejects requests it doesn't know.
-        let serial_number = client.send_resp::<SerialNumberEndpoint>(&()).await.map_err(|e| format!("{e:?}"))?;
-        let actuator = client.send_resp::<GetActuatorEndpoint>(&()).await.map_err(|e| format!("{e:?}"))?;
+        let serial_number = request::<SerialNumberEndpoint>(client.send_resp::<SerialNumberEndpoint>(&())).await?;
+        let actuator = request::<GetActuatorEndpoint>(client.send_resp::<GetActuatorEndpoint>(&())).await?;
         let mut readings = client
             .subscribe_multi::<ReadingTopic>(READING_DEPTH)
             .await
@@ -123,10 +131,22 @@ impl State {
     }
 
     async fn send_actuator(self, client: Client, state: ActuatorState) {
-        match client.send_resp::<SetActuatorEndpoint>(&state).await {
-            Ok(state) => self.actuator.set(state),
-            Err(error) => self.error.set(Some(format!("Failed to set the actuator: {error:?}"))),
+        match request::<SetActuatorEndpoint>(client.send_resp::<SetActuatorEndpoint>(&state)).await {
+            Ok(state) => {
+                self.actuator.set(state);
+                // An earlier request may have failed, but the device answers again.
+                self.error.set(None);
+            }
+            Err(error) => self.error.set(Some(format!("Failed to set the actuator: {error}"))),
         }
+    }
+}
+
+/// Gives up on a request to `E` instead of waiting forever for a response that got lost.
+async fn request<E: Endpoint>(response: impl Future<Output = Result<E::Response, HostErr<WireError>>>) -> Result<E::Response, String> {
+    match select(pin!(response), TimeoutFuture::new(REQUEST_TIMEOUT_MS)).await {
+        Either::Left((response, _)) => response.map_err(|error| format!("{error:?}")),
+        Either::Right(((), _)) => Err(format!("No response on {:?} within {REQUEST_TIMEOUT_MS} ms", E::PATH)),
     }
 }
 

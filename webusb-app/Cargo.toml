@@ -9,6 +9,8 @@ description = "Browser UI that talks to the device directly through WebUSB, with
 picolink-protocol = { path = "../protocol" }
 
 console_error_panic_hook = "0.1"
+futures-util = { version = "0.3", default-features = false }
+gloo-timers = { version = "0.3", features = ["futures"] }
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 postcard-rpc = { workspace = true, features = ["webusb"] }
