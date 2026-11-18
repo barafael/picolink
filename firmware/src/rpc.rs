@@ -23,7 +23,7 @@ use postcard_rpc::{
         },
     },
 };
-use static_cell::ConstStaticCell;
+use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::{
     OUTGOING,
@@ -37,6 +37,7 @@ pub type AppServer = Server<AppTx, AppRx, WireRxBuf, RpcApp>;
 
 static PACKET_BUFFERS: ConstStaticCell<PacketBuffers<512, 512>> = ConstStaticCell::new(PacketBuffers::new());
 static STORAGE: WireStorage<CriticalSectionRawMutex, AppDriver> = WireStorage::new();
+static SERIAL_STRING: StaticCell<[u8; 16]> = StaticCell::new();
 
 pub struct Context {
     serial_number: u64,
@@ -80,6 +81,8 @@ pub fn initialize(
     let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
     config.manufacturer = Some(USB_MANUFACTURER);
     config.product = Some(USB_PRODUCT);
+    // Tells devices apart, and browsers only remember WebUSB permissions for devices that have one.
+    config.serial_number = Some(serial_string(serial_number));
 
     let buffers = PACKET_BUFFERS.take();
     let (device, tx, rx) = STORAGE.init(driver, config, buffers.tx_buf.as_mut_slice(), USB_FS_MAX_PACKET_SIZE);
@@ -88,6 +91,16 @@ pub fn initialize(
     let key_kind = app.min_key_len();
     let server = Server::new(tx, rx, buffers.rx_buf.as_mut_slice(), app, key_kind);
     (device, server)
+}
+
+/// The USB serial number string: `serial_number` in lowercase hex, as the mock firmware formats it.
+fn serial_string(serial_number: u64) -> &'static str {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let buffer = SERIAL_STRING.init([0; 16]);
+    for (i, digit) in buffer.iter_mut().enumerate() {
+        *digit = DIGITS[(serial_number >> (60 - 4 * i)) as usize & 0xF];
+    }
+    unwrap!(core::str::from_utf8(buffer))
 }
 
 fn serial_number(context: &mut Context, _header: VarHeader, _request: ()) -> u64 {

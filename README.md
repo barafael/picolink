@@ -32,6 +32,8 @@ the actuator is the onboard LED (GPIO 25), the sensor is the RP2040's internal t
   - The cores only talk through the `INCOMING` and `OUTGOING` pub-sub channels in `main.rs`.
     Their payloads in `messages.rs` are internal and not part of the wire protocol.
   - The actuator endpoints are answered by core 0: the handler publishes a `Command` and waits for the actuator's `Event`.
+  - The USB serial number string is the flash unique ID in hex, the same number `SerialNumberEndpoint` answers.
+    Without one, browsers would not remember WebUSB permissions across replugs.
 - `mock-firmware/`: a mock of the firmware, for running without hardware.
   - It serves the same protocol with the real postcard-rpc server, over in-memory channels instead of USB.
   - Its test exercises every endpoint and the topic.
