@@ -8,7 +8,7 @@ use postcard_rpc::server::Sender;
 use crate::{
     actuator::Actuator,
     messages::{Command, Event},
-    rpc::{AppServer, AppTx},
+    rpc::{self, AppServer, AppTx},
     sensor::Sensor,
 };
 
@@ -32,7 +32,8 @@ pub async fn run_usb_device(mut usb_device: UsbDevice<'static, usb::Driver<'stat
 }
 
 #[embassy_executor::task]
-pub async fn run_rpc_server(mut server: AppServer) -> ! {
+pub async fn run_rpc_server(mut server: AppServer, tx: AppTx) -> ! {
+    rpc::configure_sender(tx).await;
     loop {
         // Returns when the host goes away.
         let _ = server.run().await;

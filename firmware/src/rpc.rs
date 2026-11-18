@@ -27,6 +27,7 @@ use static_cell::{ConstStaticCell, StaticCell};
 
 use crate::{
     OUTGOING,
+    constants::SEND_TIMEOUT_MS_PER_PACKET,
     messages::{Command, Event},
 };
 
@@ -72,12 +73,14 @@ define_dispatch! {
 }
 
 /// Must be called on the core that runs the returned device and server.
+///
+/// Also returns the server's sender, for [`configure_sender`].
 pub fn initialize(
     driver: AppDriver,
     serial_number: u64,
     commands: DynPublisher<'static, Command>,
     spawner: Spawner,
-) -> (UsbDevice<'static, AppDriver>, AppServer) {
+) -> (UsbDevice<'static, AppDriver>, AppServer, AppTx) {
     let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
     config.manufacturer = Some(USB_MANUFACTURER);
     config.product = Some(USB_PRODUCT);
@@ -89,8 +92,17 @@ pub fn initialize(
 
     let app = RpcApp::new(Context { serial_number, commands }, spawner.into());
     let key_kind = app.min_key_len();
-    let server = Server::new(tx, rx, buffers.rx_buf.as_mut_slice(), app, key_kind);
-    (device, server)
+    let server = Server::new(tx.clone(), rx, buffers.rx_buf.as_mut_slice(), app, key_kind);
+    (device, server, tx)
+}
+
+/// Gives the host more time to collect each packet than postcard-rpc's default of 2 ms.
+///
+/// A send that times out leaves its frame unterminated, so the next send first writes an empty packet.
+/// Every send after that then needs two IN transactions, and WebUSB only asks for the next one after a round trip
+/// through JavaScript, which takes longer than 2 ms. Sends would keep timing out, and the device would never answer.
+pub async fn configure_sender(tx: AppTx) {
+    tx.set_timeout_ms_per_frame(SEND_TIMEOUT_MS_PER_PACKET).await;
 }
 
 /// The USB serial number string: `serial_number` in lowercase hex, as the mock firmware formats it.

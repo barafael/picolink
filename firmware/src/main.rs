@@ -81,10 +81,10 @@ fn main() -> ! {
         let executor1 = EXECUTOR1.init(Executor::new());
         executor1.run(|spawner| {
             // The driver enables the USB interrupt in the NVIC of the core that creates it, so this has to happen here.
-            let (usb_device, server) = rpc::initialize(usb::Driver::new(usb, Irqs), serial_number, commands, spawner);
+            let (usb_device, server, tx) = rpc::initialize(usb::Driver::new(usb, Irqs), serial_number, commands, spawner);
             let sender = server.sender();
             spawner.spawn(unwrap!(run_usb_device(usb_device)));
-            spawner.spawn(unwrap!(run_rpc_server(server)));
+            spawner.spawn(unwrap!(run_rpc_server(server, tx)));
             spawner.spawn(unwrap!(publish_readings(sender, readings)));
         })
     });
