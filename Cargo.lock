@@ -4927,6 +4927,7 @@ dependencies = [
  "leptos",
  "picolink-protocol",
  "postcard-rpc",
+ "serde",
  "wasm-bindgen",
  "web-sys",
 ]

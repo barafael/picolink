@@ -14,6 +14,7 @@ gloo-timers = { version = "0.3", features = ["futures"] }
 js-sys = "0.3"
 leptos = { version = "0.8", features = ["csr"] }
 postcard-rpc = { workspace = true, features = ["webusb"] }
+serde = "1"
 wasm-bindgen = "0.2"
 web-sys = { version = "0.3", features = [
     "Navigator",

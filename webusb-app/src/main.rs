@@ -9,11 +9,8 @@ use futures_util::future::{Either, select};
 use gloo_timers::future::TimeoutFuture;
 use leptos::{prelude::*, task::spawn_local};
 use picolink_protocol::{ActuatorState, GetActuatorEndpoint, ReadingTopic, SensorReading, SerialNumberEndpoint, SetActuatorEndpoint};
-use postcard_rpc::{
-    Endpoint,
-    host_client::{HostErr, MultiSubRxError},
-    standard_icd::WireError,
-};
+use postcard_rpc::{Endpoint, host_client::MultiSubRxError, postcard_schema::Schema};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::usb::{Client, Picolink};
 
@@ -84,10 +81,7 @@ impl State {
 
         let Err(error) = self.session(&client).await;
         // Still the current connection, so this was not a deliberate disconnect.
-        if self
-            .connection
-            .with_untracked(|current| current.as_ref().is_some_and(|(current, _)| *current == picolink))
-        {
+        if self.is_current(&picolink) {
             self.disconnect().await;
             self.error.set(Some(format!("Device session ended: {error}")));
         }
@@ -106,8 +100,8 @@ impl State {
     /// Runs for as long as the device is connected.
     async fn session(self, client: &Client) -> Result<Infallible, String> {
         // Protocol version mismatches show up here: the device rejects requests it doesn't know.
-        let serial_number = request::<SerialNumberEndpoint>(client.send_resp::<SerialNumberEndpoint>(&())).await?;
-        let actuator = request::<GetActuatorEndpoint>(client.send_resp::<GetActuatorEndpoint>(&())).await?;
+        let serial_number = request::<SerialNumberEndpoint>(client, &()).await?;
+        let actuator = request::<GetActuatorEndpoint>(client, &()).await?;
         let mut readings = client
             .subscribe_multi::<ReadingTopic>(READING_DEPTH)
             .await
@@ -124,27 +118,39 @@ impl State {
     }
 
     fn set_actuator(self, state: ActuatorState) {
-        let Some((_, client)) = self.connection.get_untracked() else {
+        let Some((picolink, client)) = self.connection.get_untracked() else {
             return;
         };
-        spawn_local(self.send_actuator(client, state));
+        spawn_local(self.send_actuator(picolink, client, state));
     }
 
-    async fn send_actuator(self, client: Client, state: ActuatorState) {
-        match request::<SetActuatorEndpoint>(client.send_resp::<SetActuatorEndpoint>(&state)).await {
+    async fn send_actuator(self, picolink: Picolink, client: Client, state: ActuatorState) {
+        match request::<SetActuatorEndpoint>(&client, &state).await {
             Ok(state) => {
                 self.actuator.set(state);
                 // An earlier request may have failed, but the device answers again.
                 self.error.set(None);
             }
-            Err(error) => self.error.set(Some(format!("Failed to set the actuator: {error}"))),
+            // After a deliberate disconnect, the request fails because the client was closed.
+            Err(error) if self.is_current(&picolink) => self.error.set(Some(format!("Failed to set the actuator: {error}"))),
+            Err(_) => {}
         }
+    }
+
+    fn is_current(self, picolink: &Picolink) -> bool {
+        self.connection
+            .with_untracked(|current| current.as_ref().is_some_and(|(current, _)| current == picolink))
     }
 }
 
-/// Gives up on a request to `E` instead of waiting forever for a response that got lost.
-async fn request<E: Endpoint>(response: impl Future<Output = Result<E::Response, HostErr<WireError>>>) -> Result<E::Response, String> {
-    match select(pin!(response), TimeoutFuture::new(REQUEST_TIMEOUT_MS)).await {
+/// Gives up on a request instead of waiting forever for a response that got lost.
+async fn request<E>(client: &Client, request: &E::Request) -> Result<E::Response, String>
+where
+    E: Endpoint,
+    E::Request: Serialize + Schema,
+    E::Response: DeserializeOwned + Schema,
+{
+    match select(pin!(client.send_resp::<E>(request)), TimeoutFuture::new(REQUEST_TIMEOUT_MS)).await {
         Either::Left((response, _)) => response.map_err(|error| format!("{error:?}")),
         Either::Right(((), _)) => Err(format!("No response on {:?} within {REQUEST_TIMEOUT_MS} ms", E::PATH)),
     }
