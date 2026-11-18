@@ -70,15 +70,18 @@ Requires the [Dioxus CLI](https://dioxuslabs.com/learn/0.7/getting_started) 0.7.
 
 ```sh
 cd app
-dx serve --web                            # server + browser UI on http://127.0.0.1:8080
-dx serve --desktop                        # server + desktop window
-PICOLINK_MOCK_FIRMWARE=1 dx serve --web   # without hardware, using mock-firmware/
+dx serve --web -p picolink-app                            # server + browser UI on http://127.0.0.1:8080
+dx serve --desktop -p picolink-app                        # server + desktop window
+PICOLINK_MOCK_FIRMWARE=1 dx serve --web -p picolink-app   # without hardware, using mock-firmware/
 ```
 
 Both commands build and start the server along with the client.
 The desktop UI is a client of the server, just like the browser. By default, both use `127.0.0.1:8080`.
-For release builds, `dx bundle --web --release` produces the `server` binary next to its `public/` directory.
+For release builds, `dx bundle --web --release -p picolink-app` produces the `server` binary next to its `public/` directory.
 Use the `IP` and `PORT` environment variables to choose where the server listens.
+
+Always pass `-p picolink-app`. Without it, dx 0.7 looks up the workspace's `default-members` relative to the current directory
+instead of the workspace root, and panics with "No such file or directory" when run from `app/`.
 
 ### WebUSB app
 
@@ -112,8 +115,8 @@ sudo cp udev/70-picolink.rules /etc/udev/rules.d/ && sudo udevadm control --relo
 #   prints: Mock firmware is a USB device on dummy_udc.0
 
 # Terminal 2: check it, then start the server without PICOLINK_MOCK_FIRMWARE.
-lsusb -d 16d0:12ce            # Bus 00X Device 00Y: ID 16d0:12ce picolink picolink
-cd app && dx serve --web      # logs: Connected connection=USB bus …, then Device identified serial_number=4d4f434b00000001
+lsusb -d 16d0:12ce                         # Bus 00X Device 00Y: ID 16d0:12ce picolink picolink
+cd app && dx serve --web -p picolink-app   # logs: Connected connection=USB bus …, then Device identified serial_number=4d4f434b00000001
 ```
 
 Stopping the mock with Ctrl-C works like unplugging the device. `sudo modprobe -r dummy_hcd` unloads the virtual controller afterwards.
