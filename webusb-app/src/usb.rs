@@ -4,11 +4,14 @@ use js_sys::Reflect;
 use picolink_protocol::{USB_PID, USB_VID};
 use postcard_rpc::{
     header::VarSeqKind,
-    host_client::HostClient,
+    host_client::{
+        HostClient, WireTx,
+        webusb::{Error, WebUsbWire},
+    },
     standard_icd::{ERROR_PATH, WireError},
 };
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
-use web_sys::{Usb, UsbConnectionEvent, UsbDevice, UsbDeviceFilter, UsbDeviceRequestOptions};
+use web_sys::{Usb, UsbConnectionEvent, UsbDevice, UsbDeviceFilter, UsbDeviceRequestOptions, UsbDirection, UsbEndpoint, UsbInterface};
 
 pub type Client = HostClient<WireError>;
 
@@ -60,14 +63,65 @@ impl Device {
         if self.0.configuration().is_none() {
             self.0.select_configuration(1).await.map_err(js_error)?;
         }
-        HostClient::try_new_webusb_from_device(self.0.clone(), ERROR_PATH, CLIENT_DEPTH, VarSeqKind::Seq4)
-            .await
-            .map_err(|e| e.to_string())
+        let tx = Tx::new(&self.0).ok_or("No vendor-specific OUT endpoint")?;
+        let wire = WebUsbWire::from_device(self.0.clone()).await.map_err(|e| e.to_string())?;
+        Ok(HostClient::new_with_wire(
+            tx,
+            wire.clone(),
+            wire,
+            VarSeqKind::Seq4,
+            ERROR_PATH,
+            CLIENT_DEPTH,
+        ))
     }
 
     pub async fn close(&self) {
         // Fails if the device is already gone, which is just as good.
         let _ = self.0.close().await;
+    }
+}
+
+/// Sends frames like postcard-rpc's `WebUsbWire`, but ends those that fill their last packet with an empty one.
+///
+/// The device takes a short packet for the end of a frame. Without one, it waits for more,
+/// and takes the next frame for the rest of this one.
+struct Tx {
+    device: UsbDevice,
+    endpoint: u8,
+    packet_size: usize,
+}
+
+impl Tx {
+    /// The same endpoint as `WebUsbWire` picks. Needs a selected configuration.
+    fn new(device: &UsbDevice) -> Option<Self> {
+        let interface = (device.configuration()?.interfaces().iter())
+            .filter_map(|interface| interface.dyn_into::<UsbInterface>().ok())
+            .find(|interface| interface.alternate().interface_class() == VENDOR_CLASS)?;
+        let endpoint = (interface.alternate().endpoints().iter())
+            .filter_map(|endpoint| endpoint.dyn_into::<UsbEndpoint>().ok())
+            .find(|endpoint| endpoint.direction() == UsbDirection::Out)?;
+        Some(Self {
+            device: device.clone(),
+            endpoint: endpoint.endpoint_number(),
+            packet_size: endpoint.packet_size() as usize,
+        })
+    }
+
+    async fn transfer(&self, data: &[u8]) -> Result<(), Error> {
+        self.device.transfer_out_with_u8_array(self.endpoint, &data.into())?.await?;
+        Ok(())
+    }
+}
+
+impl WireTx for Tx {
+    type Error = Error;
+
+    async fn send(&mut self, data: Vec<u8>) -> Result<(), Error> {
+        self.transfer(&data).await?;
+        if data.len().is_multiple_of(self.packet_size) {
+            self.transfer(&[]).await?;
+        }
+        Ok(())
     }
 }
 
