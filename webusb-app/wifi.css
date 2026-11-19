@@ -1,0 +1,91 @@
+/* On top of app/assets/main.css. */
+
+.card.wide {
+    grid-column: 1 / -1;
+}
+
+.card h2 .scan {
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: normal;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 1rem 0 0;
+}
+
+.join {
+    display: grid;
+    gap: 0.75rem;
+}
+
+.join label {
+    display: grid;
+    gap: 0.25rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.join input {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid var(--muted);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+}
+
+.join button {
+    justify-self: start;
+}
+
+.outcome {
+    margin: 0.75rem 0 0;
+}
+
+.outcome.ok {
+    color: var(--ok);
+}
+
+.outcome.error {
+    color: var(--error);
+}
+
+.networks {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.networks th {
+    color: var(--muted);
+    font-weight: normal;
+    text-align: left;
+}
+
+.networks th,
+.networks td {
+    padding: 0.4rem 0.5rem;
+    border-bottom: 1px solid rgb(127 127 127 / 0.2);
+}
+
+.networks tbody tr {
+    cursor: pointer;
+}
+
+.networks tbody tr:hover {
+    background: rgb(127 127 127 / 0.1);
+}
+
+.networks tr.joined td:first-child {
+    color: var(--ok);
+    font-weight: 600;
+}
+
+.networks meter {
+    width: 4rem;
+    vertical-align: middle;
+}

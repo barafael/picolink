@@ -3,24 +3,32 @@ name = "picolink-firmware"
 version = "0.1.0"
 edition = "2024"
 publish = false
+description = "Building blocks for picolink firmwares on the RP2040, and example firmwares"
 
 [dependencies]
 picolink-protocol = { path = "../protocol", features = ["defmt"] }
 
-cortex-m-rt = "0.7.7"
 defmt = "1"
-defmt-rtt = "1"
 embassy-executor = { version = "0.10", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 embassy-rp = { version = "0.10", features = ["defmt", "time-driver", "critical-section-impl", "rp2040"] }
 embassy-sync = { version = "0.8", features = ["defmt"] }
-embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"] }
 embassy-usb = { version = "0.6", features = ["defmt"] }
-panic-probe = { version = "1", features = ["print-defmt"] }
 # Atomic CAS on thumbv6m, needed by static_cell and postcard-rpc.
 portable-atomic = { version = "1", features = ["critical-section"] }
 # Unreleased: the latest release (0.12.1) only supports embassy-usb 0.5. Keep in sync with ../Cargo.toml.
 postcard-rpc = { git = "https://github.com/jamesmunns/postcard-rpc", rev = "2469ebc614108ac2ab68d923d50c8da4c9f3e91d", default-features = false, features = ["embassy-usb-0_6-server"] }
 static_cell = "2"
+
+# For the examples.
+[dev-dependencies]
+cortex-m-rt = "0.7.7"
+defmt-rtt = "1"
+embassy-time = { version = "0.5", features = ["defmt", "defmt-timestamp-uptime"] }
+panic-probe = { version = "1", features = ["print-defmt"] }
+# pico_w_wifi. Keep cyw43-firmware/ in sync: both come from the same embassy commit.
+cyw43 = { version = "0.7", features = ["defmt"] }
+cyw43-pio = { version = "0.10", features = ["defmt"] }
+heapless = "0.9"
 
 [profile.release]
 debug = 2

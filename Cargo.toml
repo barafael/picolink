@@ -1,8 +1,8 @@
 [workspace]
 resolver = "3"
-members = ["protocol", "mock-firmware", "app", "webusb-app"]
+members = ["protocol", "host", "mock-firmware", "app", "webusb-app"]
 # The WebUSB app only builds for wasm32, see its README section.
-default-members = ["protocol", "mock-firmware", "app"]
+default-members = ["protocol", "host", "mock-firmware", "app"]
 
 # The firmware is built for thumbv6m-none-eabi with its own config and lockfile.
 exclude = ["firmware"]

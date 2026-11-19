@@ -7,8 +7,10 @@
 use std::io::{self, ErrorKind};
 
 use picolink_protocol::{
-    ENDPOINT_LIST, GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint, TOPICS_IN_LIST, TOPICS_OUT_LIST, USB_MANUFACTURER,
-    USB_PID, USB_PRODUCT, USB_VID,
+    USB_MANUFACTURER, USB_PID, USB_VID,
+    sensor_actuator::{
+        ENDPOINT_LIST, GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint, TOPICS_IN_LIST, TOPICS_OUT_LIST, USB_PRODUCT,
+    },
 };
 use postcard_rpc::server::{
     Dispatch, Server,

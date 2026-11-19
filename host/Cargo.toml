@@ -1,0 +1,20 @@
+[package]
+name = "picolink-host"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Finding a picolink device over USB, connecting to it, and making requests that time out"
+
+[dependencies]
+picolink-protocol = { path = "../protocol" }
+
+nusb = "0.2"
+postcard-rpc = { workspace = true, features = ["raw-nusb"] }
+serde = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+picolink-mock-firmware = { path = "../mock-firmware" }
+postcard-rpc = { workspace = true, features = ["raw-nusb", "test-utils"] }
+tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread"] }

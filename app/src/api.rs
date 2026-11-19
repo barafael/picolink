@@ -4,7 +4,7 @@ use dioxus::{
     fullstack::{WebSocketOptions, Websocket},
     prelude::*,
 };
-use picolink_protocol::{ActuatorState, SensorReading};
+use picolink_protocol::sensor_actuator::{ActuatorState, SensorReading};
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "server")]
 use {

@@ -3,19 +3,12 @@
 use std::{ops::ControlFlow, pin::pin, time::Duration};
 
 use dioxus::logger::tracing::{info, warn};
-use picolink_protocol::{GetActuatorEndpoint, ReadingTopic, SerialNumberEndpoint, SetActuatorEndpoint, USB_PID, USB_PRODUCT, USB_VID};
-use postcard_rpc::{
-    Endpoint,
-    header::VarSeqKind,
-    host_client::{HostClient, HostErr, IoClosed, MultiSubRxError},
-    postcard_schema::Schema,
-    standard_icd::{ERROR_PATH, WireError},
-};
-use serde::{Serialize, de::DeserializeOwned};
-use thiserror::Error;
+use picolink_host::{Client, ConnectError, DEFAULT_TIMEOUT, DeviceFilter, RequestError, request, serial_number};
+use picolink_protocol::sensor_actuator::{GetActuatorEndpoint, ReadingTopic, SetActuatorEndpoint, USB_PRODUCT};
+use postcard_rpc::host_client::MultiSubRxError;
 use tokio::{
     sync::{mpsc, watch},
-    time::{sleep, timeout},
+    time::sleep,
 };
 
 use crate::api::{Command, DeviceState};
@@ -24,12 +17,7 @@ use crate::api::{Command, DeviceState};
 const MOCK_FIRMWARE_VAR: &str = "PICOLINK_MOCK_FIRMWARE";
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(1);
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(1);
-/// Outgoing request queue.
-const CLIENT_DEPTH: usize = 8;
 const READING_DEPTH: usize = 16;
-
-type Client = HostClient<WireError>;
 
 /// Where the device is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -73,7 +61,7 @@ impl Device {
                 state.send_replace(DeviceState::Disconnected);
                 match result {
                     Ok(()) => break,
-                    Err(SessionError::Disconnected) => info!("Device disconnected"),
+                    Err(RequestError::Disconnected) => info!("Device disconnected"),
                     Err(error) => warn!(error = &error as &dyn std::error::Error, "Device session ended"),
                 }
             }
@@ -86,43 +74,6 @@ impl Device {
     }
 }
 
-/// Why a device session ended.
-#[derive(Debug, Error)]
-enum SessionError {
-    #[error("device disconnected")]
-    Disconnected,
-    #[error("no response on {path:?} within {REQUEST_TIMEOUT:?}")]
-    Timeout { path: &'static str },
-    #[error("device rejected the request on {path:?}")]
-    Rejected {
-        path: &'static str,
-        #[source]
-        source: WireError,
-    },
-    #[error("invalid response on {path:?}")]
-    InvalidResponse {
-        path: &'static str,
-        #[source]
-        source: HostErr<WireError>,
-    },
-}
-
-impl SessionError {
-    fn from_host(path: &'static str, error: HostErr<WireError>) -> Self {
-        match error {
-            HostErr::Closed => Self::Disconnected,
-            HostErr::Wire(source) => Self::Rejected { path, source },
-            source @ (HostErr::BadResponse | HostErr::Postcard(_)) => Self::InvalidResponse { path, source },
-        }
-    }
-}
-
-impl From<IoClosed> for SessionError {
-    fn from(IoClosed: IoClosed) -> Self {
-        Self::Disconnected
-    }
-}
-
 /// Returns the client and a description of the connection.
 async fn connect(transport: Transport) -> Option<(Client, String)> {
     if transport == Transport::Mock {
@@ -131,22 +82,15 @@ async fn connect(transport: Transport) -> Option<(Client, String)> {
         tokio::spawn(firmware);
         return Some((client, "mock firmware".to_owned()));
     }
-    let mut devices = nusb::list_devices()
-        .await
-        .inspect_err(|error| warn!(%error, "Failed to list USB devices"))
-        .ok()?;
-    let device = devices.find(is_picolink)?;
-    let connection = format!("USB bus {}, address {}", device.bus_id(), device.device_address());
-    let client = HostClient::try_new_raw_nusb(is_picolink, ERROR_PATH, CLIENT_DEPTH, VarSeqKind::Seq4)
-        .await
-        .inspect_err(|error| warn!(%error, "Failed to open the device"))
-        .ok()?;
-    Some((client, connection))
-}
-
-fn is_picolink(device: &nusb::DeviceInfo) -> bool {
-    // The MT21 shares VID and PID. It is a serial device and must not be claimed.
-    device.vendor_id() == USB_VID && device.product_id() == USB_PID && device.product_string() == Some(USB_PRODUCT)
+    match picolink_host::connect(&DeviceFilter::new(USB_PRODUCT)).await {
+        Ok(device) => Some((device.client, device.location.to_string())),
+        // The usual case while nothing is plugged in.
+        Err(ConnectError::NotFound) => None,
+        Err(error) => {
+            warn!(error = &error as &dyn std::error::Error, "Failed to connect");
+            None
+        }
+    }
 }
 
 /// Waits before looking for the device again. There is no device to take commands meanwhile, so they are dropped.
@@ -171,9 +115,9 @@ async fn session(
     connection: String,
     state: &watch::Sender<DeviceState>,
     commands: &mut mpsc::Receiver<Command>,
-) -> Result<(), SessionError> {
-    let serial_number = request::<SerialNumberEndpoint>(client, &()).await?;
-    let actuator = request::<GetActuatorEndpoint>(client, &()).await?;
+) -> Result<(), RequestError> {
+    let serial_number = serial_number(client).await?;
+    let actuator = request::<GetActuatorEndpoint>(client, &(), DEFAULT_TIMEOUT).await?;
     let mut readings = client.subscribe_multi::<ReadingTopic>(READING_DEPTH).await?;
     info!(serial_number = %format_args!("{serial_number:016x}"), "Device identified");
 
@@ -188,7 +132,7 @@ async fn session(
 
     loop {
         tokio::select! {
-            () = client.wait_closed() => return Err(SessionError::Disconnected),
+            () = client.wait_closed() => return Err(RequestError::Disconnected),
             reading = readings.recv() => match reading {
                 Ok(new) => state.send_modify(|state| {
                     if let DeviceState::Connected { reading, .. } = state {
@@ -196,11 +140,11 @@ async fn session(
                     }
                 }),
                 Err(MultiSubRxError::Lagged(missed)) => warn!(missed, "Missed readings"),
-                Err(MultiSubRxError::IoClosed) => return Err(SessionError::Disconnected),
+                Err(MultiSubRxError::IoClosed) => return Err(RequestError::Disconnected),
             },
             command = commands.recv() => match command {
                 Some(Command::SetActuator(new)) => {
-                    let new = request::<SetActuatorEndpoint>(client, &new).await?;
+                    let new = request::<SetActuatorEndpoint>(client, &new, DEFAULT_TIMEOUT).await?;
                     state.send_modify(|state| {
                         if let DeviceState::Connected { actuator, .. } = state {
                             *actuator = new;
@@ -213,22 +157,9 @@ async fn session(
     }
 }
 
-/// A request that gives up instead of waiting forever for a response.
-async fn request<E>(client: &Client, request: &E::Request) -> Result<E::Response, SessionError>
-where
-    E: Endpoint,
-    E::Request: Serialize + Schema,
-    E::Response: DeserializeOwned + Schema,
-{
-    timeout(REQUEST_TIMEOUT, client.send_resp::<E>(request))
-        .await
-        .map_err(|_| SessionError::Timeout { path: E::PATH })?
-        .map_err(|error| SessionError::from_host(E::PATH, error))
-}
-
 #[cfg(test)]
 mod test {
-    use picolink_protocol::ActuatorState;
+    use picolink_protocol::sensor_actuator::ActuatorState;
 
     use super::*;
 

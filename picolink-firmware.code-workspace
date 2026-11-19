@@ -6,7 +6,12 @@
 	],
 	"settings": {
 		"rust-analyzer.cargo.target": "thumbv6m-none-eabi",
+		// The library and the example firmwares. All targets would include tests, which need std.
 		"rust-analyzer.check.allTargets": false,
+		"rust-analyzer.check.extraArgs": [
+			"--lib",
+			"--examples",
+		],
 		"rust-analyzer.showUnlinkedFileNotification": false,
 		"rust-analyzer.linkedProjects": [
 			"firmware/Cargo.toml",

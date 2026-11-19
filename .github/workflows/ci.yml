@@ -36,14 +36,14 @@ jobs:
       # Installs the toolchain from rust-toolchain.toml.
       - run: rustup toolchain install && rustup component add clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Clippy (protocol, mock firmware)
-        run: cargo clippy --locked -p picolink-protocol -p picolink-mock-firmware --all-targets --all-features -- -D warnings
+      - name: Clippy (protocol, host library and its examples, mock firmware)
+        run: cargo clippy --locked -p picolink-protocol -p picolink-host -p picolink-mock-firmware --all-targets --all-features -- -D warnings
       - name: Clippy (server)
         run: cargo clippy --locked -p picolink-app --no-default-features --features server --all-targets -- -D warnings
       - name: Clippy (desktop UI)
         run: cargo clippy --locked -p picolink-app --no-default-features --features desktop --all-targets -- -D warnings
       - name: Test
-        run: cargo test --locked -p picolink-protocol -p picolink-mock-firmware
+        run: cargo test --locked -p picolink-protocol -p picolink-host -p picolink-mock-firmware
       - name: Test (server)
         run: cargo test --locked -p picolink-app --no-default-features --features server
 
@@ -73,14 +73,17 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: firmware
-      - name: Clippy
-        run: cargo clippy --locked -- -D warnings
-      - name: Build
-        run: cargo build --locked --release
+      # Not --all-targets: tests would need std.
+      - name: Clippy (library and examples)
+        run: cargo clippy --locked --lib --examples -- -D warnings
+      - name: Build the examples
+        run: cargo build --locked --release --examples
       - uses: actions/upload-artifact@v7
         with:
           name: picolink-firmware
-          path: firmware/target/thumbv6m-none-eabi/release/picolink-firmware
+          path: |
+            firmware/target/thumbv6m-none-eabi/release/examples/sensor_actuator
+            firmware/target/thumbv6m-none-eabi/release/examples/pico_w_wifi
 
   # The WebUSB app on GitHub Pages, once everything else passed on main.
   pages-build:
@@ -101,9 +104,12 @@ jobs:
         run: curl -sSfL "https://github.com/trunk-rs/trunk/releases/download/v$TRUNK_VERSION/trunk-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C ~/.cargo/bin
       - id: pages
         uses: actions/configure-pages@v6
-      # The site lives below the domain root, e.g. /picolink/.
+      # The site lives below the domain root, e.g. /picolink/. A page per firmware: the Wi-Fi one in wifi/.
+      # In this order, as each build replaces its --dist directory.
       - name: Build
-        run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
+        run: |
+          trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/" index.html
+          trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/wifi/" --dist dist/wifi wifi.html
         working-directory: webusb-app
       - uses: actions/upload-pages-artifact@v5
         with:

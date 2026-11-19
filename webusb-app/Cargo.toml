@@ -3,7 +3,11 @@ name = "picolink-webusb-app"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Browser UI that talks to the device directly through WebUSB, without a server"
+description = "WebUSB building blocks for pages that talk to a picolink device directly, without a server, and a page per firmware"
+
+# The pages are the binaries, see index.html and wifi.html.
+[lib]
+name = "picolink_webusb"
 
 [dependencies]
 picolink-protocol = { path = "../protocol" }

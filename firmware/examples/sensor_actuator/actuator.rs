@@ -3,7 +3,7 @@
 use defmt::debug;
 use embassy_rp::gpio::{Level, Output};
 use embassy_sync::pubsub::{DynPublisher, DynSubscriber};
-use picolink_protocol::ActuatorState;
+use picolink_protocol::sensor_actuator::ActuatorState;
 
 use crate::messages::{Command, Event};
 

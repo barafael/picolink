@@ -3,13 +3,17 @@ name = "picolink-protocol"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "postcard-rpc interface between the picolink firmware and its host"
+description = "postcard-rpc interfaces between the picolink firmwares and their hosts"
 
 [features]
-defmt = ["dep:defmt"]
+defmt = ["dep:defmt", "heapless/defmt"]
 
 [dependencies]
 defmt = { version = "1", optional = true }
+heapless = { version = "0.9", default-features = false, features = ["serde"] }
 postcard-rpc = { workspace = true }
-postcard-schema = { version = "0.2", features = ["derive"] }
+postcard-schema = { version = "0.2", features = ["derive", "heapless-v0_9"] }
 serde = { version = "1", default-features = false, features = ["derive"] }
+
+[dev-dependencies]
+postcard = "1"

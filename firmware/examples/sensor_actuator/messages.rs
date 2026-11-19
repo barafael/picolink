@@ -1,6 +1,6 @@
 //! What the cores send each other. Not part of the wire protocol.
 
-use picolink_protocol::{ActuatorState, SensorReading};
+use picolink_protocol::sensor_actuator::{ActuatorState, SensorReading};
 
 /// Core 1 to core 0.
 #[derive(Debug, Clone, Copy, defmt::Format)]

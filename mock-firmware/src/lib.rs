@@ -1,4 +1,4 @@
-//! Mock firmware: serves the picolink protocol like the real firmware, but without hardware.
+//! Mock firmware: serves the `sensor_actuator` protocol like that firmware example, but without hardware.
 //!
 //! The same handlers run on one of two transports:
 //! - [`in_process`]: in-process channels. Needs no setup, but bypasses USB entirely.
@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use picolink_protocol::{ActuatorState, ReadingTopic, SensorReading};
+use picolink_protocol::sensor_actuator::{ActuatorState, ReadingTopic, SensorReading};
 use postcard_rpc::{
     header::VarHeader,
     server::{Sender, WireTx},
@@ -64,7 +64,7 @@ macro_rules! dispatcher {
 }
 
 mod channels {
-    use picolink_protocol::{
+    use picolink_protocol::sensor_actuator::{
         ENDPOINT_LIST, GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint, TOPICS_IN_LIST, TOPICS_OUT_LIST,
     };
     use postcard_rpc::{
@@ -152,7 +152,7 @@ async fn publish_readings<Tx: WireTx + Clone>(sender: Sender<Tx>) {
 
 #[cfg(test)]
 mod test {
-    use picolink_protocol::{GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint};
+    use picolink_protocol::sensor_actuator::{GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint};
 
     use super::*;
 

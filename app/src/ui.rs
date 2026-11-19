@@ -4,7 +4,7 @@ use dioxus::{
     fullstack::{UseWebsocket, WebSocketOptions, use_websocket},
     prelude::*,
 };
-use picolink_protocol::{ActuatorState, SensorReading};
+use picolink_protocol::sensor_actuator::{ActuatorState, SensorReading};
 
 use crate::api::{Command, DeviceState, device_socket};
 

@@ -1,4 +1,4 @@
-//! Puts `memory.x` on the linker search path and adds the linker scripts.
+//! Puts `memory.x` on the linker search path and adds the linker scripts to the examples, the firmwares.
 
 use std::{env, fs, path::PathBuf};
 
@@ -8,8 +8,8 @@ fn main() {
     println!("cargo:rustc-link-search={}", out.display());
     println!("cargo:rerun-if-changed=memory.x");
 
-    println!("cargo:rustc-link-arg-bins=--nmagic");
-    println!("cargo:rustc-link-arg-bins=-Tlink.x");
-    println!("cargo:rustc-link-arg-bins=-Tlink-rp.x");
-    println!("cargo:rustc-link-arg-bins=-Tdefmt.x");
+    println!("cargo:rustc-link-arg-examples=--nmagic");
+    println!("cargo:rustc-link-arg-examples=-Tlink.x");
+    println!("cargo:rustc-link-arg-examples=-Tlink-rp.x");
+    println!("cargo:rustc-link-arg-examples=-Tdefmt.x");
 }

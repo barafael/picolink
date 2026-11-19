@@ -2,43 +2,50 @@
 #![no_main]
 #![forbid(unsafe_code)]
 
-//! picolink firmware for the RP2040.
+//! A plain Raspberry Pi Pico serving the `sensor_actuator` protocol: its temperature sensor and onboard LED.
 //!
 //! Core 0 runs the application: one [`sensor::Sensor`] and one [`actuator::Actuator`].
 //! Core 1 runs the USB stack and the postcard-rpc server.
 //! The cores only talk through the [`INCOMING`] and [`OUTGOING`] pub-sub channels.
+//!
+//! On a Pico W, the onboard LED is wired to the Wi-Fi chip instead, so it stays dark.
 
-use defmt::{info, unwrap, warn};
+use defmt::{info, unwrap};
 use defmt_rtt as _;
 use embassy_executor::Executor;
 use embassy_rp::{
-    Peri,
     adc::{self, Adc},
     bind_interrupts,
-    flash::{self, Flash},
     gpio::{Level, Output},
-    multicore::{Stack, spawn_core1},
-    peripherals::{FLASH, USB},
+    peripherals::USB,
     usb,
 };
 use embassy_sync::{blocking_mutex::raw::CriticalSectionRawMutex, pubsub::PubSubChannel};
 use panic_probe as _;
+use picolink_firmware::{
+    link::{Link, run_usb},
+    multicore::spawn_core1,
+    serial_number,
+    temperature::TemperatureSensor,
+};
+use picolink_protocol::sensor_actuator::USB_PRODUCT;
 use static_cell::StaticCell;
 
 use crate::{
     actuator::Actuator,
-    constants::{CORE1_STACK_SIZE, FLASH_SIZE, INCOMING_CHANNEL_CAPACITY, OUTGOING_CHANNEL_CAPACITY},
     messages::{Command, Event},
     sensor::Sensor,
-    tasks::{publish_readings, run_actuator, run_rpc_server, run_sensor, run_usb_device},
+    tasks::{publish_readings, run_actuator, run_sensor, serve},
 };
 
 mod actuator;
-mod constants;
 mod messages;
 mod rpc;
 mod sensor;
 mod tasks;
+
+const OUTGOING_CHANNEL_CAPACITY: usize = 16;
+const INCOMING_CHANNEL_CAPACITY: usize = 8;
 
 /// Core 0 to core 1. Published by the sensor and the actuator.
 /// Subscribed by the reading publisher and, while it waits for an answer, by an RPC handler.
@@ -48,8 +55,6 @@ pub static OUTGOING: PubSubChannel<CriticalSectionRawMutex, Event, OUTGOING_CHAN
 pub static INCOMING: PubSubChannel<CriticalSectionRawMutex, Command, INCOMING_CHANNEL_CAPACITY, 1, 1> = PubSubChannel::new();
 
 static EXECUTOR0: StaticCell<Executor> = StaticCell::new();
-static CORE1_STACK: StaticCell<Stack<CORE1_STACK_SIZE>> = StaticCell::new();
-static EXECUTOR1: StaticCell<Executor> = StaticCell::new();
 
 bind_interrupts!(struct Irqs {
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
@@ -62,31 +67,29 @@ fn main() -> ! {
 
     let p = embassy_rp::init(Default::default());
 
-    // Must happen before core 1 runs: flash access pauses it.
-    let serial_number = read_serial_number(p.FLASH);
+    // Must happen before core 1 runs.
+    let serial_number = serial_number::read(p.FLASH);
     info!("serial number: {:016x}", serial_number);
 
     let actuator = Actuator::new(Output::new(p.PIN_25, Level::Low));
-    let sensor = Sensor::new(
+    let sensor = Sensor::new(TemperatureSensor::new(
         Adc::new(p.ADC, Irqs, adc::Config::default()),
         adc::Channel::new_temp_sensor(p.ADC_TEMP_SENSOR),
-    );
+    ));
     let usb = p.USB;
 
     info!("Spawning tasks onto cores");
 
-    spawn_core1(p.CORE1, CORE1_STACK.init(Stack::new()), move || {
+    spawn_core1(p.CORE1, move |spawner| {
         let commands = unwrap!(INCOMING.dyn_publisher());
         let readings = unwrap!(OUTGOING.dyn_subscriber());
-        let executor1 = EXECUTOR1.init(Executor::new());
-        executor1.run(|spawner| {
-            // The driver enables the USB interrupt in the NVIC of the core that creates it, so this has to happen here.
-            let (usb_device, server, tx) = rpc::initialize(usb::Driver::new(usb, Irqs), serial_number, commands, spawner);
-            let sender = server.sender();
-            spawner.spawn(unwrap!(run_usb_device(usb_device)));
-            spawner.spawn(unwrap!(run_rpc_server(server, tx)));
-            spawner.spawn(unwrap!(publish_readings(sender, readings)));
-        })
+        // Created here, so that core 1 handles the USB interrupt.
+        let link = Link::new(usb::Driver::new(usb, Irqs), USB_PRODUCT, serial_number);
+        let (usb_device, server) = link.serve(rpc::app(serial_number, commands, spawner));
+        let sender = server.sender();
+        spawner.spawn(unwrap!(run_usb(usb_device)));
+        spawner.spawn(unwrap!(serve(server)));
+        spawner.spawn(unwrap!(publish_readings(sender, readings)));
     });
 
     let sensor_publisher = unwrap!(OUTGOING.dyn_publisher());
@@ -97,13 +100,4 @@ fn main() -> ! {
         spawner.spawn(unwrap!(run_sensor(sensor, sensor_publisher)));
         spawner.spawn(unwrap!(run_actuator(actuator, actuator_subscriber, actuator_publisher)));
     });
-}
-
-fn read_serial_number(flash: Peri<'static, FLASH>) -> u64 {
-    let mut flash = Flash::<_, flash::Blocking, FLASH_SIZE>::new_blocking(flash);
-    let mut uid = [0; 8];
-    if let Err(e) = flash.blocking_unique_id(&mut uid) {
-        warn!("Failed to read flash unique id: {}", e);
-    }
-    u64::from_be_bytes(uid)
 }

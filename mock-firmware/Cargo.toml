@@ -3,7 +3,7 @@ name = "picolink-mock-firmware"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Mock of the picolink firmware, for running without hardware"
+description = "Mock of the picolink sensor_actuator firmware, for running without hardware"
 
 [features]
 # Linux only: serve as a real USB device through the kernel's dummy_hcd. Needs root to run.

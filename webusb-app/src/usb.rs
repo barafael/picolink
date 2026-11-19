@@ -1,7 +1,7 @@
-//! Finding the device through WebUSB and connecting a postcard-rpc client to it.
+//! Finding a device through WebUSB and connecting a postcard-rpc client to it.
 
 use js_sys::Reflect;
-use picolink_protocol::{USB_PID, USB_PRODUCT, USB_VID};
+use picolink_protocol::{USB_PID, USB_VID};
 use postcard_rpc::{
     header::VarSeqKind,
     host_client::HostClient,
@@ -17,13 +17,15 @@ const CLIENT_DEPTH: usize = 8;
 /// postcard-rpc's interface. The MT21 shares VID and PID, but has none.
 const VENDOR_CLASS: u8 = 0xFF;
 
-/// Cheap to clone, all clones refer to the same device.
+/// A picolink device. Cheap to clone, all clones refer to the same device.
 #[derive(Clone, PartialEq)]
-pub struct Picolink(UsbDevice);
+pub struct Device(UsbDevice);
 
-impl Picolink {
-    /// Lets the user pick a device. Only works from a user gesture, such as a click.
-    pub async fn request() -> Result<Self, String> {
+impl Device {
+    /// Lets the user pick a device with the USB product string `product`. Only works from a user gesture, such as a click.
+    ///
+    /// WebUSB can't filter by product string, so the picker also offers the other picolink firmwares.
+    pub async fn request(product: &str) -> Result<Self, String> {
         let filter = UsbDeviceFilter::new();
         filter.set_vendor_id(USB_VID);
         filter.set_product_id(USB_PID);
@@ -32,23 +34,22 @@ impl Picolink {
             .request_device(&UsbDeviceRequestOptions::new(&[filter]))
             .await
             .map_err(js_error)?;
-        Self::from_device(device).ok_or_else(|| "Not a picolink device".into())
+        Self::from_device(device, product).ok_or_else(|| format!("Not a {product} device"))
     }
 
-    /// A device the user already granted access to on an earlier visit, if it is plugged in.
-    pub async fn paired() -> Result<Option<Self>, String> {
+    /// A device with the USB product string `product` that the user granted access to before, if it is plugged in.
+    pub async fn paired(product: &str) -> Result<Option<Self>, String> {
         let devices = usb()?.get_devices().await.map_err(js_error)?;
-        Ok(devices.iter().find_map(Self::from_device))
+        Ok(devices.iter().find_map(|device| Self::from_device(device, product)))
     }
 
-    fn from_device(device: UsbDevice) -> Option<Self> {
-        // Same check as the server's.
-        let is_picolink =
-            device.vendor_id() == USB_VID && device.product_id() == USB_PID && device.product_name().as_deref() == Some(USB_PRODUCT);
-        is_picolink.then_some(Self(device))
+    fn from_device(device: UsbDevice, product: &str) -> Option<Self> {
+        // Same check as the host library's.
+        let matches = device.vendor_id() == USB_VID && device.product_id() == USB_PID && device.product_name().as_deref() == Some(product);
+        matches.then_some(Self(device))
     }
 
-    /// postcard-rpc's WebUSB client reads one packet per transfer, so every message must stay below 64 bytes.
+    /// postcard-rpc's WebUSB client reads one packet per transfer, so every message the device sends must fit in 64 bytes.
     pub async fn connect(&self) -> Result<Client, String> {
         self.0.open().await.map_err(js_error)?;
         // The client needs a configuration to find the vendor-specific interface in.
@@ -66,14 +67,16 @@ impl Picolink {
     }
 }
 
-/// Calls `f` whenever a device the user granted access to before gets plugged in.
-pub fn on_connect(f: impl Fn(Picolink) + 'static) {
+/// Calls `f` whenever a device with the USB product string `product` that the user granted access to before gets plugged in.
+///
+/// WebUSB has one such listener per page, so call this once.
+pub fn on_connect(product: &'static str, f: impl Fn(Device) + 'static) {
     let Ok(usb) = usb() else {
         return;
     };
     let listener = Closure::<dyn Fn(UsbConnectionEvent)>::new(move |event: UsbConnectionEvent| {
-        if let Some(picolink) = Picolink::from_device(event.device()) {
-            f(picolink);
+        if let Some(device) = Device::from_device(event.device(), product) {
+            f(device);
         }
     });
     usb.set_onconnect(Some(listener.as_ref().unchecked_ref()));
