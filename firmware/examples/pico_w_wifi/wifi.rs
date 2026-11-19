@@ -1,5 +1,7 @@
 //! Scanning, continuously, and streaming each scan to the host.
 
+use core::cmp::Reverse;
+
 use cyw43::{BssInfo, Control, ScanOptions};
 use defmt::{debug, info, trace, warn};
 use embassy_sync::{blocking_mutex::raw::NoopRawMutex, mutex::Mutex};
@@ -24,7 +26,8 @@ type Networks = Vec<Network, MAX_NETWORKS>;
 #[embassy_executor::task]
 pub async fn scan_continuously(wifi: &'static Wifi, sender: Sender<Tx>) -> ! {
     let mut seq = 0u32;
-    for scan in (0..=u16::MAX).cycle() {
+    let mut scan = 0u16;
+    loop {
         // Released before publishing, so that joining doesn't wait for a slow host.
         let networks = scan_once(&mut *wifi.lock().await).await;
         let count = networks.len() as u8;
@@ -32,9 +35,9 @@ pub async fn scan_continuously(wifi: &'static Wifi, sender: Sender<Tx>) -> ! {
             publish(&sender, &mut seq, &ScanEvent::Network { scan, network }).await;
         }
         publish(&sender, &mut seq, &ScanEvent::Done { scan, networks: count }).await;
+        scan = scan.wrapping_add(1);
         Timer::after(SCAN_PAUSE).await;
     }
-    unreachable!("the scan counter cycles")
 }
 
 async fn publish(sender: &Sender<Tx>, seq: &mut u32, event: &ScanEvent) {
@@ -57,7 +60,7 @@ async fn scan_once(control: &mut Control<'static>) -> Networks {
     if with_timeout(Duration::from_millis(SCAN_TIMEOUT_MS), scanning).await.is_err() {
         warn!("Scan timed out, reporting what it found so far");
     }
-    networks.sort_unstable_by_key(|network| -network.rssi);
+    networks.sort_unstable_by_key(|network| Reverse(network.rssi));
     info!("Found {} networks", networks.len());
     networks
 }

@@ -7,7 +7,7 @@ use picolink_protocol::wifi::{
     JOIN_ANSWER_TIMEOUT_MS, JoinEndpoint, JoinError, JoinRequest, LEAVE_ANSWER_TIMEOUT_MS, LeaveEndpoint, MAX_NETWORKS, Network,
     PASSPHRASE_LEN, Passphrase, ScanEvent, ScanTopic, SerialNumberEndpoint, Ssid, StatusEndpoint, USB_PRODUCT,
 };
-use picolink_webusb::{Client, Connection, DEFAULT_TIMEOUT_MS, request};
+use picolink_webusb::{Client, Connection, DEFAULT_TIMEOUT_MS, Page, request};
 use postcard_rpc::host_client::MultiSubRxError;
 
 /// A whole scan, and then some.
@@ -21,8 +21,6 @@ fn main() {
 #[derive(Clone, Copy)]
 struct State {
     connection: Connection,
-    /// `Some` once the device identified itself.
-    serial_number: RwSignal<Option<u64>>,
     joined: RwSignal<Option<String>>,
     /// From the last complete scan, strongest first.
     networks: RwSignal<Vec<Network>>,
@@ -45,7 +43,6 @@ impl State {
     fn new() -> Self {
         Self {
             connection: Connection::new(USB_PRODUCT),
-            serial_number: RwSignal::new(None),
             joined: RwSignal::new(None),
             networks: RwSignal::new(Vec::new()),
             scans: RwSignal::new(0),
@@ -58,15 +55,9 @@ impl State {
         }
     }
 
-    /// Identified once connected and the device told its serial number.
-    fn identified(self) -> Option<u64> {
-        self.serial_number.get().filter(|_| self.connection.is_connected())
-    }
-
     /// Runs for as long as the device is connected.
     async fn session(self, client: Client) -> Result<Infallible, String> {
         // Left over from an earlier connection.
-        self.serial_number.set(None);
         self.networks.set(Vec::new());
         self.scans.set(0);
         self.form.busy.set(false);
@@ -81,7 +72,7 @@ impl State {
         let serial_number = request::<SerialNumberEndpoint>(&client, &(), DEFAULT_TIMEOUT_MS).await?;
         let status = request::<StatusEndpoint>(&client, &(), DEFAULT_TIMEOUT_MS).await?;
         self.joined.set(status.joined.map(|ssid| ssid.as_str().to_owned()));
-        self.serial_number.set(Some(serial_number));
+        self.connection.identified(serial_number);
 
         // The scan being received, and its networks so far.
         let mut pending: Option<(u16, Vec<Network>)> = None;
@@ -119,46 +110,39 @@ impl State {
                 return;
             }
         };
-        let Some((device, client)) = self.connection.current() else {
-            return;
-        };
         self.form.busy.set(true);
         self.form.outcome.set(None);
         spawn_local(async move {
-            let result = request::<JoinEndpoint>(&client, &join, JOIN_ANSWER_TIMEOUT_MS as u32).await;
+            let result = self.connection.request::<JoinEndpoint>(&join, JOIN_ANSWER_TIMEOUT_MS as u32).await;
             self.form.busy.set(false);
             match result {
-                Ok(Ok(())) => {
+                Some(Ok(Ok(()))) => {
                     self.joined.set(Some(ssid.clone()));
                     self.form.passphrase.set(String::new());
                     self.form.outcome.set(Some(Ok(format!("Joined {ssid:?}"))));
                 }
-                Ok(Err(error)) => {
+                Some(Ok(Err(error))) => {
                     // The device dropped the network it was on, too.
                     self.joined.set(None);
                     self.form
                         .outcome
                         .set(Some(Err(format!("Joining {ssid:?} failed: {}", describe(error)))));
                 }
-                // After a deliberate disconnect, the request fails because the client was closed.
-                Err(error) if self.connection.is_current(&device) => self.form.outcome.set(Some(Err(error))),
-                Err(_) => {}
+                Some(Err(error)) => self.form.outcome.set(Some(Err(error))),
+                None => {}
             }
         });
     }
 
     fn leave(self) {
-        let Some((device, client)) = self.connection.current() else {
-            return;
-        };
         spawn_local(async move {
-            match request::<LeaveEndpoint>(&client, &(), LEAVE_ANSWER_TIMEOUT_MS as u32).await {
-                Ok(()) => {
+            match self.connection.request::<LeaveEndpoint>(&(), LEAVE_ANSWER_TIMEOUT_MS as u32).await {
+                Some(Ok(())) => {
                     self.joined.set(None);
                     self.form.outcome.set(None);
                 }
-                Err(error) if self.connection.is_current(&device) => self.form.outcome.set(Some(Err(format!("Leaving failed: {error}")))),
-                Err(_) => {}
+                Some(Err(error)) => self.form.outcome.set(Some(Err(format!("Leaving failed: {error}")))),
+                None => {}
             }
         });
     }
@@ -196,39 +180,12 @@ fn describe(error: JoinError) -> String {
 #[component]
 fn App() -> impl IntoView {
     let state = State::new();
-    state.connection.connect_automatically(move |client| state.session(client));
-
-    let connect = move |_| spawn_local(state.connection.connect_picked(move |client| state.session(client)));
-    let status = move || match (state.connection.error(), state.connection.is_connected(), state.identified()) {
-        (Some(error), _, _) => ("error", error),
-        (None, false, _) => ("pending", "No device".to_owned()),
-        (None, true, None) => ("pending", "Connecting…".to_owned()),
-        (None, true, Some(_)) => ("ok", "Device connected".to_owned()),
-    };
-
     view! {
-        <header>
-            <h1>"picolink Wi-Fi"</h1>
-            <span class=move || format!("pill {}", status().0)>{move || status().1}</span>
-        </header>
-        <main>
-            <Show
-                when=move || state.identified().is_some()
-                fallback=move || {
-                    view! {
-                        <p class="hint">
-                            <button on:click=connect disabled=move || state.connection.is_connected()>
-                                "Connect…"
-                            </button>
-                        </p>
-                    }
-                }
-            >
-                <DeviceCard state />
-                <JoinCard state />
-                <NetworksCard state />
-            </Show>
-        </main>
+        <Page title="picolink Wi-Fi" connection=state.connection session=move |client| state.session(client)>
+            <DeviceCard state />
+            <JoinCard state />
+            <NetworksCard state />
+        </Page>
     }
 }
 
@@ -241,13 +198,16 @@ fn DeviceCard(state: State) -> impl IntoView {
                 <dt>"Connection"</dt>
                 <dd>"WebUSB"</dd>
                 <dt>"Serial number"</dt>
-                <dd>{move || state.serial_number.get().map(|serial_number| format!("{serial_number:016x}"))}</dd>
+                <dd>{move || state.connection.serial_number().map(|serial_number| format!("{serial_number:016x}"))}</dd>
                 <dt>"Network"</dt>
                 <dd class="joined">{move || state.joined.get().unwrap_or_else(|| "none".into())}</dd>
             </dl>
             <p class="actions">
                 <Show when=move || state.joined.get().is_some()>
-                    <button on:click=move |_| state.leave()>"Leave network"</button>
+                    // Not while joining: the device would only leave after the join, and its answer could come too late.
+                    <button on:click=move |_| state.leave() disabled=move || state.form.busy.get()>
+                        "Leave network"
+                    </button>
                 </Show>
                 <button on:click=move |_| spawn_local(state.connection.disconnect())>"Disconnect"</button>
             </p>

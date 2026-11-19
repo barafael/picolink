@@ -1,12 +1,12 @@
 //! The USB device and the postcard-rpc server on top of it.
 //!
 //! The endpoints are up to the firmware: it defines them with [`postcard_rpc::define_dispatch!`],
-//! with [`Tx`] as `tx_impl` and [`Spawn`] as `spawn_impl`, and passes the dispatcher to [`Link::serve`].
+//! with [`Tx`] as `tx_impl` and [`Spawn`] as `spawn_impl`, and passes the dispatcher to [`Server::new`].
 //! Tasks can't be generic, so each firmware wraps [`Server::run`] in a task of its own.
 //!
 //! ```ignore
-//! let link = Link::new(usb::Driver::new(p.USB, Irqs), USB_PRODUCT, serial_number);
-//! let (usb, server) = link.serve(RpcApp::new(context, spawner.into()));
+//! let app = RpcApp::new(context, spawner.into());
+//! let (usb, server) = Server::new(usb::Driver::new(p.USB, Irqs), USB_PRODUCT, serial_number, app);
 //! spawner.spawn(unwrap!(run_usb(usb)));
 //! spawner.spawn(unwrap!(serve(server))); // `async fn serve(server: Server<RpcApp>) -> ! { server.run().await }`
 //! ```
@@ -53,50 +53,7 @@ static BUFFERS: ConstStaticCell<PacketBuffers<MAX_TX_MESSAGE, MAX_RX_MESSAGE>> =
 static STORAGE: WireStorage<CriticalSectionRawMutex, Driver> = WireStorage::new();
 static SERIAL_STRING: StaticCell<[u8; 16]> = StaticCell::new();
 
-/// The USB device, before it gets a dispatcher.
-pub struct Link {
-    usb: Usb,
-    tx: Tx,
-    rx: Rx,
-    rx_buf: WireRxBuf,
-}
-
-impl Link {
-    /// Sets up the USB device with a vendor-specific interface for postcard-rpc. Panics if called twice.
-    ///
-    /// `product` is the USB product string, the `USB_PRODUCT` of the firmware's module in `picolink_protocol`.
-    /// `serial_number` becomes the USB serial number string, in hex, see [`crate::serial_number`].
-    ///
-    /// The driver enables the USB interrupt on the core that creates it, so create it on the core that runs [`run_usb`].
-    pub fn new(driver: Driver, product: &'static str, serial_number: u64) -> Self {
-        let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
-        config.manufacturer = Some(USB_MANUFACTURER);
-        config.product = Some(product);
-        // Tells devices apart, and browsers only remember WebUSB permissions for devices that have one.
-        config.serial_number = Some(serial_string(serial_number));
-
-        let buffers = BUFFERS.take();
-        let (usb, tx, rx) = STORAGE.init(driver, config, buffers.tx_buf.as_mut_slice(), USB_FS_MAX_PACKET_SIZE);
-        Self {
-            usb,
-            tx,
-            rx,
-            rx_buf: buffers.rx_buf.as_mut_slice(),
-        }
-    }
-
-    /// Serves `app`'s endpoints. Run the returned device with [`run_usb`] and the server with [`Server::run`].
-    pub fn serve<D: Dispatch<Tx = Tx>>(self, app: D) -> (Usb, Server<D>) {
-        let key_kind = app.min_key_len();
-        let server = Server {
-            tx: self.tx.clone(),
-            inner: postcard_rpc::server::Server::new(self.tx, self.rx, self.rx_buf, app, key_kind),
-        };
-        (self.usb, server)
-    }
-}
-
-/// Runs the USB device. Spawn it on the core that called [`Link::new`].
+/// Runs the USB device. Spawn it on the core that called [`Server::new`].
 #[embassy_executor::task]
 pub async fn run_usb(mut usb: Usb) -> ! {
     usb.run().await
@@ -109,6 +66,27 @@ pub struct Server<D: Dispatch<Tx = Tx>> {
 }
 
 impl<D: Dispatch<Tx = Tx>> Server<D> {
+    /// Sets up the USB device with a vendor-specific interface for postcard-rpc, and a server for `app`'s endpoints.
+    /// Run the device with [`run_usb`] and the server with [`Server::run`]. Panics if called twice.
+    ///
+    /// `product` is the USB product string, the `USB_PRODUCT` of the firmware's module in `picolink_protocol`.
+    /// `serial_number` becomes the USB serial number string, in hex, see [`crate::serial_number`].
+    ///
+    /// The driver enables the USB interrupt on the core that creates it, so create it on the core that runs [`run_usb`].
+    pub fn new(driver: Driver, product: &'static str, serial_number: u64, app: D) -> (Usb, Self) {
+        let mut config = embassy_usb::Config::new(USB_VID, USB_PID);
+        config.manufacturer = Some(USB_MANUFACTURER);
+        config.product = Some(product);
+        // Tells devices apart, and browsers only remember WebUSB permissions for devices that have one.
+        config.serial_number = Some(serial_string(serial_number));
+
+        let buffers = BUFFERS.take();
+        let (usb, tx, rx) = STORAGE.init(driver, config, buffers.tx_buf.as_mut_slice(), USB_FS_MAX_PACKET_SIZE);
+        let key_kind = app.min_key_len();
+        let inner = postcard_rpc::server::Server::new(tx.clone(), rx, buffers.rx_buf.as_mut_slice(), app, key_kind);
+        (usb, Self { inner, tx })
+    }
+
     /// For publishing topics to the host from other tasks.
     pub fn sender(&self) -> Sender<Tx> {
         self.inner.sender()

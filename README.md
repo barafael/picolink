@@ -31,7 +31,7 @@ On a Pico W, the onboard LED is wired to the Wi-Fi chip, so it stays dark.
 - `protocol/`: the postcard-rpc interfaces, `no_std`, shared by everything else.
   - `SerialNumberEndpoint`, served by every firmware, and the USB VID and PID.
   - `sensor_actuator`: `GetActuatorEndpoint`, `SetActuatorEndpoint`, and `ReadingTopic`, sent from the device to the host.
-  - `wifi`: `ScanEndpoint`, `JoinEndpoint`, `LeaveEndpoint`.
+  - `wifi`: `StatusEndpoint`, `JoinEndpoint`, `LeaveEndpoint`, and `ScanTopic`, sent from the device to the host.
   - Each module has its firmware's USB product string, `picolink` and `picolink-wifi`. Hosts use it to find a device they understand.
 - `firmware/`: a library for embassy on the RP2040, and the example firmwares.
   - `link`: the USB device and a postcard-rpc server for the firmware's own endpoints, defined with `define_dispatch!`.
@@ -62,6 +62,7 @@ On a Pico W, the onboard LED is wired to the Wi-Fi chip, so it stays dark.
 - `webusb-app/`: a library for Leptos pages that talk to a device through WebUSB, without a server, and a page per firmware.
   - `usb.rs`: finds a device by its USB product string and connects postcard-rpc's WebUSB client to it.
   - `connection.rs`: keeps a page connected, reconnecting when a device it may use is plugged in again.
+  - `page.rs`: the frame both pages share, with the status pill and the button to connect.
   - `src/bin/sensor_actuator.rs` (`index.html`): the same UI as `app/`, styled by the same `app/assets/main.css`.
   - `src/bin/wifi.rs` (`wifi.html`): the networks the Pico W sees, updated with every scan, and a form to join one.
 

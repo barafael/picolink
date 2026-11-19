@@ -2,6 +2,7 @@
 //!
 //! - [`usb`]: finding a device by its USB product string and connecting postcard-rpc's WebUSB client to it.
 //! - [`connection`]: keeping a Leptos page connected, reconnecting when the device is plugged in again.
+//! - [`page`]: the frame every page shares, with the status pill and the button to connect.
 //! - [`request`]: requests that time out.
 //!
 //! The pages in `src/bin/` are built from these, one per firmware:
@@ -18,9 +19,10 @@ use postcard_rpc::{Endpoint, postcard_schema::Schema};
 use serde::{Serialize, de::DeserializeOwned};
 
 pub mod connection;
+pub mod page;
 pub mod usb;
 
-pub use crate::{connection::Connection, usb::Client};
+pub use crate::{connection::Connection, page::Page, usb::Client};
 
 /// Long enough for any request that the device answers right away. Same as the host library's.
 pub const DEFAULT_TIMEOUT_MS: u32 = 1000;

@@ -3,18 +3,23 @@
 use std::convert::Infallible;
 
 use leptos::{prelude::*, task::spawn_local};
+use postcard_rpc::{Endpoint, postcard_schema::Schema};
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::usb::{self, Client, Device};
 
 /// A page's connection to a device with one USB product string. Cheap to copy.
 ///
 /// The page provides a session: an async function that gets the client, sets up whatever the page shows,
-/// and runs for as long as the device is connected. When it fails, the connection is closed and its error shown.
+/// calls [`Connection::identified`], and runs for as long as the device is connected.
+/// When it fails, the connection is closed and its error shown.
 #[derive(Clone, Copy)]
 pub struct Connection {
     product: &'static str,
     /// Both hold JS objects and can't leave this thread, hence local storage.
     current: RwSignal<Option<(Device, Client)>, LocalStorage>,
+    /// `Some` once the connected device identified itself.
+    serial_number: RwSignal<Option<u64>>,
     error: RwSignal<Option<String>>,
 }
 
@@ -24,6 +29,7 @@ impl Connection {
         Self {
             product,
             current: RwSignal::new_local(None),
+            serial_number: RwSignal::new(None),
             error: RwSignal::new(None),
         }
     }
@@ -89,8 +95,34 @@ impl Connection {
         let Some((device, client)) = self.current.write().take() else {
             return;
         };
+        self.serial_number.set(None);
         client.close();
         device.close().await;
+    }
+
+    /// A request outside the session, see [`crate::request`].
+    ///
+    /// `None` without a device, and after a deliberate disconnect: then the request fails because the client was closed,
+    /// which is no error worth showing.
+    pub async fn request<E>(self, request: &E::Request, timeout_ms: u32) -> Option<Result<E::Response, String>>
+    where
+        E: Endpoint,
+        E::Request: Serialize + Schema,
+        E::Response: DeserializeOwned + Schema,
+    {
+        let (device, client) = self.current.get_untracked()?;
+        let result = crate::request::<E>(&client, request, timeout_ms).await;
+        (result.is_ok() || self.is_current(&device)).then_some(result)
+    }
+
+    /// For the session: the device told its serial number, so the page can show it.
+    pub fn identified(&self, serial_number: u64) {
+        self.serial_number.set(Some(serial_number));
+    }
+
+    /// `Some` once the connected device identified itself. Tracked, for views.
+    pub fn serial_number(&self) -> Option<u64> {
+        self.serial_number.get()
     }
 
     /// Tracked, for views.
@@ -98,22 +130,22 @@ impl Connection {
         self.current.with(Option::is_some)
     }
 
-    /// Tracked, for views.
-    pub fn error(&self) -> Option<String> {
-        self.error.get()
+    /// Class and text for a status pill. Tracked, for views.
+    pub fn status(&self) -> (&'static str, String) {
+        match (self.error.get(), self.is_connected(), self.serial_number()) {
+            (Some(error), _, _) => ("error", error),
+            (None, false, _) => ("pending", "No device".to_owned()),
+            (None, true, None) => ("pending", "Connecting…".to_owned()),
+            (None, true, Some(_)) => ("ok", "Device connected".to_owned()),
+        }
     }
 
     pub fn set_error(&self, error: Option<String>) {
         self.error.set(error);
     }
 
-    /// For requests outside the session: the device and its client.
-    pub fn current(&self) -> Option<(Device, Client)> {
-        self.current.get_untracked()
-    }
-
-    /// Whether `device` is still connected. A request to it that fails afterwards is no error worth showing.
-    pub fn is_current(&self, device: &Device) -> bool {
+    /// Whether `device` is still connected: if not, it was disconnected deliberately.
+    fn is_current(&self, device: &Device) -> bool {
         self.current
             .with_untracked(|current| current.as_ref().is_some_and(|(current, _)| current == device))
     }

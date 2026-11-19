@@ -1,15 +1,16 @@
-//! The endpoints, served on core 1.
+//! The endpoints and the readings topic, served on core 1.
 //!
 //! The actuator endpoints are answered by core 0, via [`INCOMING`](crate::INCOMING) and [`OUTGOING`](crate::OUTGOING).
 
-use defmt::{debug, unwrap};
+use defmt::{debug, trace, unwrap};
 use embassy_executor::Spawner;
-use embassy_sync::pubsub::DynPublisher;
-use picolink_firmware::link::{Spawn, Tx};
+use embassy_sync::pubsub::{DynPublisher, DynSubscriber};
+use picolink_firmware::link::{Server, Spawn, Tx};
 use picolink_protocol::sensor_actuator::{
-    ActuatorState, ENDPOINT_LIST, GetActuatorEndpoint, SerialNumberEndpoint, SetActuatorEndpoint, TOPICS_IN_LIST, TOPICS_OUT_LIST,
+    ActuatorState, ENDPOINT_LIST, GetActuatorEndpoint, ReadingTopic, SerialNumberEndpoint, SetActuatorEndpoint, TOPICS_IN_LIST,
+    TOPICS_OUT_LIST,
 };
-use postcard_rpc::{define_dispatch, header::VarHeader};
+use postcard_rpc::{define_dispatch, header::VarHeader, server::Sender};
 
 use crate::{
     OUTGOING,
@@ -50,6 +51,25 @@ define_dispatch! {
 
 pub fn app(serial_number: u64, commands: DynPublisher<'static, Command>, spawner: Spawner) -> RpcApp {
     RpcApp::new(Context { serial_number, commands }, spawner.into())
+}
+
+#[embassy_executor::task]
+pub async fn serve(server: Server<RpcApp>) -> ! {
+    server.run().await
+}
+
+#[embassy_executor::task]
+pub async fn publish_readings(sender: Sender<Tx>, mut subscriber: DynSubscriber<'static, Event>) -> ! {
+    let mut seq = 0u32;
+    loop {
+        if let Event::Reading(reading) = subscriber.next_message_pure().await {
+            // Fails while no host is listening, then the reading is just dropped.
+            if sender.publish::<ReadingTopic>(seq.into(), &reading).await.is_err() {
+                trace!("Dropped reading");
+            }
+            seq = seq.wrapping_add(1);
+        }
+    }
 }
 
 fn serial_number(context: &mut Context, _header: VarHeader, _request: ()) -> u64 {

@@ -7,40 +7,21 @@ use picolink_protocol::sensor_actuator::ActuatorState;
 
 use crate::messages::{Command, Event};
 
-pub struct Actuator {
-    led: Output<'static>,
-}
-
-impl Actuator {
-    pub fn new(led: Output<'static>) -> Self {
-        Self { led }
-    }
-
-    pub async fn run(mut self, mut subscriber: DynSubscriber<'static, Command>, publisher: DynPublisher<'static, Event>) -> ! {
-        loop {
-            match subscriber.next_message_pure().await {
-                Command::SetActuator(state) => {
-                    debug!("Setting actuator {}", state);
-                    self.set(state);
-                }
-                Command::GetActuator => {}
+/// Answers every [`Command`] with the LED's state.
+#[embassy_executor::task]
+pub async fn run(mut led: Output<'static>, mut subscriber: DynSubscriber<'static, Command>, publisher: DynPublisher<'static, Event>) -> ! {
+    loop {
+        match subscriber.next_message_pure().await {
+            Command::SetActuator(state) => {
+                debug!("Setting actuator {}", state);
+                led.set_level(match state {
+                    ActuatorState::Off => Level::Low,
+                    ActuatorState::On => Level::High,
+                });
             }
-            publisher.publish_immediate(Event::Actuator(self.state()));
+            Command::GetActuator => {}
         }
-    }
-
-    fn set(&mut self, state: ActuatorState) {
-        self.led.set_level(match state {
-            ActuatorState::Off => Level::Low,
-            ActuatorState::On => Level::High,
-        });
-    }
-
-    fn state(&self) -> ActuatorState {
-        if self.led.is_set_high() {
-            ActuatorState::On
-        } else {
-            ActuatorState::Off
-        }
+        let state = if led.is_set_high() { ActuatorState::On } else { ActuatorState::Off };
+        publisher.publish_immediate(Event::Actuator(state));
     }
 }

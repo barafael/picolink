@@ -22,7 +22,7 @@ use embassy_rp::{
 use embassy_sync::mutex::Mutex;
 use panic_probe as _;
 use picolink_firmware::{
-    link::{Link, Server, run_usb},
+    link::{Server, run_usb},
     serial_number,
 };
 use picolink_protocol::wifi::USB_PRODUCT;
@@ -81,8 +81,8 @@ async fn main(spawner: Spawner) {
     static WIFI: StaticCell<Wifi> = StaticCell::new();
     let wifi = WIFI.init(Mutex::new(control));
 
-    let link = Link::new(usb::Driver::new(p.USB, Irqs), USB_PRODUCT, serial_number);
-    let (usb_device, server) = link.serve(rpc::app(serial_number, wifi, spawner));
+    let app = rpc::app(serial_number, wifi, spawner);
+    let (usb_device, server) = Server::new(usb::Driver::new(p.USB, Irqs), USB_PRODUCT, serial_number, app);
     let sender = server.sender();
     spawner.spawn(unwrap!(run_usb(usb_device)));
     spawner.spawn(unwrap!(serve(server)));
