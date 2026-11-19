@@ -34,7 +34,11 @@ impl Device {
             .request_device(&UsbDeviceRequestOptions::new(&[filter]))
             .await
             .map_err(js_error)?;
-        Self::from_device(device, product).ok_or_else(|| format!("Not a {product} device"))
+        let found = device.product_name();
+        Self::from_device(device, product).ok_or_else(|| match found {
+            Some(found) => format!("This page is for {product:?} devices, but this one is {found:?}: it runs other firmware"),
+            None => format!("This page is for {product:?} devices, but this one has no USB product string"),
+        })
     }
 
     /// A device with the USB product string `product` that the user granted access to before, if it is plugged in.
